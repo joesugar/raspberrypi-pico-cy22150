@@ -99,8 +99,14 @@ public:
         current_state_.enable = temp_state_.enable;
 
         commit_clock_enable(DISABLE);
-        commit_frequency(current_state_.frequency);
+        float frequency = commit_frequency(current_state_.frequency);
         commit_clock_enable(current_state_.enable ? ENABLE : DISABLE);
+
+        // Update the state structures in case the actual calculated
+        // frequency is not the same as the requested frequency.
+        //
+        current_state_.frequency = frequency;
+        temp_state_.frequency = frequency;
     }
 
 private:
