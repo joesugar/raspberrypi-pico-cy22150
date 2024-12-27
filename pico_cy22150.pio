@@ -1,0 +1,44 @@
+
+.program pico_cy22150
+
+.wrap_target
+	set pins, 0
+	set pins, 1      ; Drive pin low
+.wrap
+
+% c-sdk {
+#define osc_out 16
+
+static inline void pico_cy22150_program_init(PIO pio, uint sm, uint offset, float frequency_hz) {
+    pio_sm_config c = pico_cy22150_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `pin`
+    // parameter to this function.
+    sm_config_set_set_pins(&c, osc_out, 1);
+
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, osc_out);
+    gpio_set_drive_strength(osc_out, GPIO_DRIVE_STRENGTH_2MA);
+    gpio_set_slew_rate(osc_out, GPIO_SLEW_RATE_SLOW);
+
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, osc_out, 1, true);
+
+    // Set pio divider.
+    // Output frequency will be 1/2 the PIO frequency.
+    // Minimum allowed PIO frequency is 2000 Hz.
+    if (frequency_hz < 2000) 
+    {
+        frequency_hz = 2000;
+    }
+    float clock_divider = (float) clock_get_hz(clk_sys) / frequency_hz;
+    sm_config_set_clkdiv(&c, clock_divider); 
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+
+    // Set the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+
+%}
