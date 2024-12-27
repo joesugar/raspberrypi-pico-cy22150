@@ -21,6 +21,34 @@
 #define I2C_SCL     9
 #define I2C_ADDR    0x69    // cy22150 i2c address
 
+/**
+ * @brief  Print the error to the stdout in json format.
+ * @param  command  Structure containing the returned error.
+ */
+void show_error(command_t command)
+{
+    std::cout << 
+        R"({)" << 
+        R"(  "command_number":)" << command.command_number << "," 
+        R"(  "error":)"          << R"(")"  << command.error.value() << R"(")" <<
+        R"(})" << std::endl;
+}
+
+/**
+ * @brief  Acknowledges the given command by pringing the 
+ *         current DDS state.
+ * @param  command_number   Identifier for command being acked.
+ * @param  dds              Current dds from which state is being pulled.
+ */
+void ack_command(int command_number, CY22150 dds)
+{
+    std::cout << 
+        R"({)" << 
+        R"(  "command_number":)" <<  command_number << "," 
+        R"(  "frequency":)"      <<  static_cast<uint32_t>(dds.get_frequency()) << ","
+        R"(  "enable_out":)"     << (dds.get_enabled() ? "true" : "false") <<
+        R"(})" << std::endl;
+}
 
 /**
  * @brief  Main routine.
@@ -82,13 +110,12 @@ int main()
         std::cout << "CY22150 chip found at address " << I2C_ADDR << std::endl;
 
     // Create an instance of the frequency generator.
+    //
     // Because of the way the clock frequency is generated, the CY22150 
     // clock frequency is 1/2 the pio frequency.
     //
-    float frequency = 4000000.0;    // Default to 4 MHz.
     CY22150 cy22150(I2C_PORT, pio_frequency_hz / 2);
     cy22150.init();
-    cy22150.set_frequency(frequency);
 
     // Create an instance of the command processor and
     // start the main loop.
@@ -100,21 +127,36 @@ int main()
 
         if (command_processor.command_is_available())
         {
+            // If there is a command available, set the values, then
+            // commit them.
+            //
+            // An error cancels any action so just loop back to the
+            // top of the loop.
+            //
             command_t command = command_processor.get_command();
 
             if (command.error.has_value())
             {
-                std::cout << "Error" << std::endl;
+                show_error(command);
+                continue;
             }
-            else if (command.frequency_hz.has_value())
+
+            if (command.frequency_hz.has_value())
             {
-                frequency = static_cast<float>(command.frequency_hz.value());
+                float frequency = static_cast<float>(command.frequency_hz.value());
                 cy22150.set_frequency(frequency);
             }
-            else if (command.enable_out.has_value())
+            
+            if (command.enable_out.has_value())
             {
                 cy22150.enable_clock(command.enable_out.value());
             }
+
+            cy22150.commit();
+
+            // All went well so acknowledge the command.
+            //
+            ack_command(command.command_number, cy22150);
         }
     }
 }

@@ -1,3 +1,7 @@
+#pragma once
+
+#include <utility>
+
 #include "hardware/structs/i2c.h"
 
 class CY22150
@@ -5,6 +9,7 @@ class CY22150
 public:
 
     static const uint8_t I2C_ADDRESS = 0x69;
+    static constexpr float FREQ_DEFAULT = 4000000.0;
 
     /**
      * @brief  Constructor
@@ -13,9 +18,12 @@ public:
      *                        wtih the chip
      * @param  clock_freq_hz  Clock signal frequency, in Hz
      */
-    CY22150(i2c_inst_t* i2c, float clock_freq_hz)
+    CY22150(i2c_inst_t* i2c, float clock_freq_hz, float frequency = FREQ_DEFAULT)
         :i2c_(i2c)
         ,clock_freq_hz_(clock_freq_hz)
+        ,current_state_({frequency, DISABLE})
+        ,temp_state_({frequency, DISABLE})
+        ,default_state_({frequency, DISABLE})
     { };
 
     /**
@@ -27,7 +35,7 @@ public:
     {
         // Disable all the clocks.
         //
-        write_reg(CLKOE, 0x00);
+        commit_clock_enable(DISABLE);
 
         // Initialize the clock drive.
         //
@@ -38,19 +46,120 @@ public:
             (clock_freq_hz_ <=  90000000) ? 0x30 :
             (clock_freq_hz_ <= 133000000) ? 0x38 :
             0x00;
-        write_reg(XDRV, xdrv);
+
+        // Set the clock generator to the default state.
+        //
+        set_frequency(default_state_.frequency);
+        enable_clock(default_state_.enable);
+        commit();
     }
 
     /**
-     * @brief  Disable the clock output
-     * 
-     * @note   This disables all the clocks.  No method to
-     *         disable individual clocks.
+     * @brief  Set the flag to enable/disable the clock.
+     * @param  enable  Enable clock if true, false otherwise.
      */
     auto enable_clock(bool enable) -> void
     {
-        uint8_t mask = (enable) ? 0x02 : 0x00;
-        enable_clock(mask);
+        temp_state_.enable = enable;
+    }
+
+    /**
+     * @brief  Return the current clock state.
+     */
+    auto get_enabled() -> bool
+    {
+        return current_state_.enable;
+    }
+
+    /**
+     * @brief  Set the clock frequency.
+     * @param  frequency  Desired clock frequency, in Hz.
+     */
+    auto set_frequency(float frequency) -> void
+    {
+        temp_state_.frequency = frequency;
+    }
+
+    /**
+     * @brief  Return the current clock frequency.
+     */
+    auto get_frequency() -> float
+    {
+        return current_state_.frequency;
+    }
+
+    /**
+     * @brief  Commit changes to the CY22150.
+     */
+    auto commit() -> void
+    {
+        // Commit state to the CY22150.
+        //
+        current_state_.frequency = temp_state_.frequency;
+        current_state_.enable = temp_state_.enable;
+
+        commit_clock_enable(DISABLE);
+        commit_frequency(current_state_.frequency);
+        commit_clock_enable(current_state_.enable ? ENABLE : DISABLE);
+    }
+
+private:
+
+    using cy22150_state = struct {
+        float frequency;
+        bool enable;
+    };
+
+    /**
+     * @brief  Enable the clock output
+     * @param  clock_mask  Mask identifying the clocks to be enabled.
+     * 
+     * @note   Sets the registers to divide the VCO by N
+     * @note   Only enables clocks 1 - 4.
+     */
+    auto commit_clock_enable(uint8_t clock_mask) -> void
+    {
+        // Disable all but clocks 1 - 4
+        //
+        clock_mask = clock_mask & 0x0F;
+
+        // If the clock mask == 0x00 that means disable the clock.
+        //
+        if (clock_mask != 0x00)
+        {
+            // Indices into the array containing values to be written
+            // to the registers.
+            //
+            const int reg44 = 0;
+            const int reg45 = 1;
+            const int reg46 = 2;
+
+            uint8_t regs[3] = {0x00, 0x00, 0x00 };
+            if ((clock_mask & 0x01) == 0x01)
+            {
+                regs[reg44] |= 0x20;
+            }
+            if ((clock_mask & 0x02) == 0x02)
+            {
+                regs[reg44] |= 0x04;
+            }
+            if ((clock_mask & 0x04) == 0x04)
+            {
+                regs[reg45] |= 0x80;
+            }
+            if ((clock_mask & 0x08) == 0x08)
+            {
+                regs[reg45] |= 0x10;
+            }
+            regs[reg46] = 0x3F;
+
+            // Write to the registers.
+            //
+            write_reg(REG44, regs[reg44]);
+            write_reg(REG45, regs[reg45]);
+            write_reg(REG46, regs[reg46]);
+        }
+        write_reg(CLKOE, clock_mask);
     }
 
     /**
@@ -60,7 +169,7 @@ public:
      * 
      * @return Actual programmed frequency.
      */
-    auto set_frequency(float frequency_hz) -> float
+    auto commit_frequency(float frequency_hz) -> float
     {  
         float q_min = 2; 
         float q_max = (int)(clock_freq_hz_ / 250000.0);
@@ -107,7 +216,7 @@ public:
                 } 
             } 
         }
-        return set_frequency(q, p, d);
+        return commit_frequency(q, p, d);
     }
 
     /**
@@ -119,7 +228,7 @@ public:
      * 
      * @return Actual programmed frequency.
      */
-    auto set_frequency(uint16_t q_total, uint16_t p_total, uint16_t divider) -> float
+    auto commit_frequency(uint16_t q_total, uint16_t p_total, uint16_t divider) -> float
     {
         // Set the q counter value.
         //
@@ -191,60 +300,6 @@ public:
         return frequency;
     }
 
-private:
-
-    /**
-     * @brief  Enable the clock output
-     * @param  clock_mask  Mask identifying the clocks to be enabled.
-     * 
-     * @note   Sets the registers to divide the VCO by N
-     * @note   Only enables clocks 1 - 4.
-     */
-    auto enable_clock(uint8_t clock_mask) -> void
-    {
-        // Disable all but clocks 1 - 4
-        //
-        clock_mask = clock_mask & 0x0F;
-
-        // If the clock mask == 0x00 that means disable the clock.
-        //
-        if (clock_mask != 0x00)
-        {
-            // Indices into the array containing values to be written
-            // to the registers.
-            //
-            const int reg44 = 0;
-            const int reg45 = 1;
-            const int reg46 = 2;
-
-            uint8_t regs[3] = {0x00, 0x00, 0x00 };
-            if ((clock_mask & 0x01) == 0x01)
-            {
-                regs[reg44] |= 0x20;
-            }
-            if ((clock_mask & 0x02) == 0x02)
-            {
-                regs[reg44] |= 0x04;
-            }
-            if ((clock_mask & 0x04) == 0x04)
-            {
-                regs[reg45] |= 0x80;
-            }
-            if ((clock_mask & 0x08) == 0x08)
-            {
-                regs[reg45] |= 0x10;
-            }
-            regs[reg46] = 0x3F;
-
-            // Write to the registers.
-            //
-            write_reg(REG44, regs[reg44]);
-            write_reg(REG45, regs[reg45]);
-            write_reg(REG46, regs[reg46]);
-        }
-        write_reg(CLKOE, clock_mask);
-    }
-
     /**
      * @brief  Write to an 8 bit register.
      * 
@@ -279,6 +334,13 @@ private:
     static const uint16_t REG45 = 0x45;
     static const uint16_t REG46 = 0x46;
 
+    static const uint8_t DISABLE = 0x00;
+    static const uint8_t ENABLE  = 0x02;
+
     i2c_inst_t* i2c_;
     float clock_freq_hz_;
+
+    cy22150_state current_state_;
+    cy22150_state temp_state_;
+    cy22150_state default_state_;
 };
