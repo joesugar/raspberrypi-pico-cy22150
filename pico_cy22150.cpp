@@ -19,7 +19,6 @@
 #define I2C_PORT    i2c0
 #define I2C_SDA     8
 #define I2C_SCL     9
-#define I2C_ADDR    0x69    // cy22150 i2c address
 
 /**
  * @brief  Print the error to the stdout in json format.
@@ -92,7 +91,7 @@ int main()
     float pio_frequency_hz = 25000000;   // 25 MHz
     pico_cy22150_program_init(pio, sm, offset, pio_frequency_hz);
 
-    // I2C Initialisation. Using it at 400Khz.
+    // I2C Initialisation. Using it at 100 kHz.
     //
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
@@ -105,9 +104,9 @@ int main()
     //
     uint8_t rxdata;
     if (i2c_read_blocking(I2C_PORT, CY22150::I2C_ADDRESS, &rxdata, 1, false) < 0)
-        std::cout << "CY22150 chip not found at address " << I2C_ADDR << std::endl;
+        std::cout << "CY22150 chip not found at address " << CY22150::I2C_ADDRESS << std::endl;
     else
-        std::cout << "CY22150 chip found at address " << I2C_ADDR << std::endl;
+        std::cout << "CY22150 chip found at address " << CY22150::I2C_ADDRESS << std::endl;
 
     // Create an instance of the frequency generator.
     //

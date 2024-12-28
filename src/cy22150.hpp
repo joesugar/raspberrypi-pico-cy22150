@@ -46,7 +46,7 @@ public:
 
         // Set the clock generator to the default state.
         //
-        disable_clock_commit();
+        commit_disable_clock();
         set_frequency(default_state_.frequency);
         set_enabled(default_state_.enable);
         commit();
@@ -91,20 +91,15 @@ public:
      */
     auto commit() -> void
     {
-        // Commit state to the CY22150.
+        // Commit state to the CY22150 and save it as the
+        // current state.
         //
+        commit_disable_clock();
+        temp_state_.frequency = frequency_commit(temp_state_.frequency);
+        temp_state_.enable ? commit_enable_clock() : commit_disable_clock();
+
         current_state_.frequency = temp_state_.frequency;
         current_state_.enable = temp_state_.enable;
-
-        disable_clock_commit();
-        float frequency = frequency_commit(current_state_.frequency);
-        current_state_.enable ? enable_clock_commit() : disable_clock_commit();
-
-        // Update the state structures in case the actual calculated
-        // frequency is not the same as the requested frequency.
-        //
-        current_state_.frequency = frequency;
-        temp_state_.frequency = frequency;
     }
 
 private:
@@ -113,7 +108,7 @@ private:
      * @brief  Set the flag to enable/disable the clock.
      * @param  enable  Enable clock if true, false otherwise.
      */
-    auto disable_clock_commit() -> void
+    auto commit_disable_clock() -> void
     {
         commit_clock_enable(NONE);
     }
@@ -122,7 +117,7 @@ private:
      * @brief  Set the flag to enable/disable the clock.
      * @param  enable  Enable clock if true, false otherwise.
      */
-    auto enable_clock_commit() -> void
+    auto commit_enable_clock() -> void
     {
         commit_clock_enable(CLOCK2);
     }
