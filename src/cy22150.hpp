@@ -21,9 +21,9 @@ public:
     CY22150(i2c_inst_t* i2c, float clock_freq_hz, float frequency = FREQ_DEFAULT)
         :i2c_(i2c)
         ,clock_freq_hz_(clock_freq_hz)
-        ,current_state_({frequency, DISABLE})
-        ,temp_state_({frequency, DISABLE})
-        ,default_state_({frequency, DISABLE})
+        ,current_state_({frequency, DISABLE })
+        ,temp_state_({frequency, DISABLE })
+        ,default_state_({frequency, ENABLE })
     { };
 
     /**
@@ -33,10 +33,6 @@ public:
      */
     auto init() -> void
     {
-        // Disable all the clocks.
-        //
-        commit_clock_enable(DISABLE);
-
         // Initialize the clock drive.
         //
         int8_t xdrv = 
@@ -46,11 +42,13 @@ public:
             (clock_freq_hz_ <=  90000000) ? 0x30 :
             (clock_freq_hz_ <= 133000000) ? 0x38 :
             0x00;
+        write_reg(XDRV, xdrv);
 
         // Set the clock generator to the default state.
         //
+        disable_clock_commit();
         set_frequency(default_state_.frequency);
-        enable_clock(default_state_.enable);
+        set_enabled(default_state_.enable);
         commit();
     }
 
@@ -58,7 +56,7 @@ public:
      * @brief  Set the flag to enable/disable the clock.
      * @param  enable  Enable clock if true, false otherwise.
      */
-    auto enable_clock(bool enable) -> void
+    auto set_enabled(bool enable) -> void
     {
         temp_state_.enable = enable;
     }
@@ -98,9 +96,9 @@ public:
         current_state_.frequency = temp_state_.frequency;
         current_state_.enable = temp_state_.enable;
 
-        commit_clock_enable(DISABLE);
-        float frequency = commit_frequency(current_state_.frequency);
-        commit_clock_enable(current_state_.enable ? ENABLE : DISABLE);
+        disable_clock_commit();
+        float frequency = frequency_commit(current_state_.frequency);
+        current_state_.enable ? enable_clock_commit() : disable_clock_commit();
 
         // Update the state structures in case the actual calculated
         // frequency is not the same as the requested frequency.
@@ -111,10 +109,23 @@ public:
 
 private:
 
-    using cy22150_state = struct {
-        float frequency;
-        bool enable;
-    };
+    /**
+     * @brief  Set the flag to enable/disable the clock.
+     * @param  enable  Enable clock if true, false otherwise.
+     */
+    auto disable_clock_commit() -> void
+    {
+        commit_clock_enable(NONE);
+    }
+
+    /**
+     * @brief  Set the flag to enable/disable the clock.
+     * @param  enable  Enable clock if true, false otherwise.
+     */
+    auto enable_clock_commit() -> void
+    {
+        commit_clock_enable(CLOCK2);
+    }
 
     /**
      * @brief  Enable the clock output
@@ -175,7 +186,7 @@ private:
      * 
      * @return Actual programmed frequency.
      */
-    auto commit_frequency(float frequency_hz) -> float
+    auto frequency_commit(float frequency_hz) -> float
     {  
         float q_min = 2; 
         float q_max = (int)(clock_freq_hz_ / 250000.0);
@@ -222,7 +233,7 @@ private:
                 } 
             } 
         }
-        return commit_frequency(q, p, d);
+        return frequency_commit(q, p, d);
     }
 
     /**
@@ -234,7 +245,7 @@ private:
      * 
      * @return Actual programmed frequency.
      */
-    auto commit_frequency(uint16_t q_total, uint16_t p_total, uint16_t divider) -> float
+    auto frequency_commit(uint16_t q_total, uint16_t p_total, uint16_t divider) -> float
     {
         // Set the q counter value.
         //
@@ -340,12 +351,22 @@ private:
     static const uint16_t REG45 = 0x45;
     static const uint16_t REG46 = 0x46;
 
-    static const uint8_t DISABLE = 0x00;
-    static const uint8_t ENABLE  = 0x02;
+    static const uint8_t NONE   = 0x00;
+    static const uint8_t CLOCK2 = 0x02;
+
+    static const bool ENABLE  = true;
+    static const bool DISABLE = false;
 
     i2c_inst_t* i2c_;
     float clock_freq_hz_;
 
+    // State definitions.
+    //
+    using cy22150_state = struct {
+        float frequency;
+        bool enable;
+    };
+    
     cy22150_state current_state_;
     cy22150_state temp_state_;
     cy22150_state default_state_;

@@ -149,7 +149,7 @@ int main()
             
             if (command.enable_out.has_value())
             {
-                cy22150.enable_clock(command.enable_out.value());
+                cy22150.set_enabled(command.enable_out.value());
             }
 
             cy22150.commit();
