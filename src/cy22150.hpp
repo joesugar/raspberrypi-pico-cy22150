@@ -23,7 +23,7 @@ public:
         ,clock_freq_hz_(clock_freq_hz)
         ,current_state_({frequency, DISABLE })
         ,temp_state_({frequency, DISABLE })
-        ,default_state_({frequency, ENABLE })
+        ,default_state_({frequency, DISABLE })
     { };
 
     /**
